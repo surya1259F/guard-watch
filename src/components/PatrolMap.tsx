@@ -1,10 +1,9 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { dataStore } from "@/lib/data-store";
 
-// Fix default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
@@ -21,37 +20,40 @@ function createIcon(color: string) {
   });
 }
 
-const icons = {
+const icons: Record<string, L.DivIcon> = {
   patrolling: createIcon("#22c55e"),
   idle: createIcon("#f59e0b"),
   offline: createIcon("#6b7280"),
 };
 
 export default function PatrolMap() {
-  const gpsData = dataStore.getGPS();
-  const logs = dataStore.getPatrolLogs();
+  const [gpsData, setGpsData] = useState<any[]>([]);
+  const [logs, setLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    dataStore.getGPS().then(setGpsData);
+    dataStore.getPatrolLogs().then(setLogs);
+    const unsub1 = dataStore.subscribeToTable("gps_tracking", () => dataStore.getGPS().then(setGpsData));
+    const unsub2 = dataStore.subscribeToTable("patrol_logs", () => dataStore.getPatrolLogs().then(setLogs));
+    return () => { unsub1(); unsub2(); };
+  }, []);
 
   return (
-    <MapContainer
-      center={[40.7128, -74.006]}
-      zoom={15}
-      className="w-full h-full"
-      scrollWheelZoom
-    >
+    <MapContainer center={[40.7128, -74.006]} zoom={15} className="w-full h-full" scrollWheelZoom>
       <TileLayer
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
       />
       {gpsData.map(g => {
-        const lastLog = logs.find(l => l.guardId === g.guardId);
+        const lastLog = logs.find((l: any) => l.guard_id === g.guard_id);
         return (
-          <Marker key={g.guardId} position={[g.lat, g.lng]} icon={icons[g.status] || icons.offline}>
+          <Marker key={g.guard_id} position={[g.lat, g.lng]} icon={icons[g.status] || icons.offline}>
             <Popup>
               <div className="text-sm space-y-1">
-                <p className="font-bold">{g.guardName}</p>
+                <p className="font-bold">{g.guard_name}</p>
                 <p>Status: <span className="capitalize">{g.status}</span></p>
                 <p>Last seen: {new Date(g.timestamp).toLocaleTimeString()}</p>
-                {lastLog && <p>Last checkpoint: {lastLog.checkpointName}</p>}
+                {lastLog && <p>Last checkpoint: {lastLog.checkpoint_name}</p>}
               </div>
             </Popup>
           </Marker>
