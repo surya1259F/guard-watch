@@ -25,6 +25,7 @@ function AppRoutes() {
   if (!user) {
     return (
       <Routes>
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<LoginPage />} />
       </Routes>
     );
