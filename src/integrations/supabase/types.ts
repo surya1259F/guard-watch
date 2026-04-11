@@ -14,16 +14,251 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      alerts: {
+        Row: {
+          created_at: string
+          dismissed: boolean
+          id: string
+          message: string
+          severity: string
+          timestamp: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          dismissed?: boolean
+          id: string
+          message: string
+          severity?: string
+          timestamp?: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          dismissed?: boolean
+          id?: string
+          message?: string
+          severity?: string
+          timestamp?: string
+          type?: string
+        }
+        Relationships: []
+      }
+      checkpoints: {
+        Row: {
+          created_at: string
+          id: string
+          last_scanned: string | null
+          last_scanned_by: string | null
+          lat: number
+          lng: number
+          location: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          id: string
+          last_scanned?: string | null
+          last_scanned_by?: string | null
+          lat: number
+          lng: number
+          location: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_scanned?: string | null
+          last_scanned_by?: string | null
+          lat?: number
+          lng?: number
+          location?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      gps_tracking: {
+        Row: {
+          guard_id: string
+          guard_name: string
+          id: string
+          is_moving: boolean
+          lat: number
+          lng: number
+          status: string
+          timestamp: string
+        }
+        Insert: {
+          guard_id: string
+          guard_name: string
+          id?: string
+          is_moving?: boolean
+          lat: number
+          lng: number
+          status?: string
+          timestamp?: string
+        }
+        Update: {
+          guard_id?: string
+          guard_name?: string
+          id?: string
+          is_moving?: boolean
+          lat?: number
+          lng?: number
+          status?: string
+          timestamp?: string
+        }
+        Relationships: []
+      }
+      incidents: {
+        Row: {
+          created_at: string
+          description: string
+          guard_id: string
+          guard_name: string
+          id: string
+          lat: number
+          lng: number
+          resolved: boolean
+          timestamp: string
+          type: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          guard_id: string
+          guard_name: string
+          id: string
+          lat: number
+          lng: number
+          resolved?: boolean
+          timestamp?: string
+          type: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          guard_id?: string
+          guard_name?: string
+          id?: string
+          lat?: number
+          lng?: number
+          resolved?: boolean
+          timestamp?: string
+          type?: string
+        }
+        Relationships: []
+      }
+      patrol_logs: {
+        Row: {
+          checkpoint_id: string
+          checkpoint_name: string
+          created_at: string
+          guard_id: string
+          guard_name: string
+          id: string
+          lat: number
+          lng: number
+          synced: boolean
+          timestamp: string
+        }
+        Insert: {
+          checkpoint_id: string
+          checkpoint_name: string
+          created_at?: string
+          guard_id: string
+          guard_name: string
+          id: string
+          lat: number
+          lng: number
+          synced?: boolean
+          timestamp?: string
+        }
+        Update: {
+          checkpoint_id?: string
+          checkpoint_name?: string
+          created_at?: string
+          guard_id?: string
+          guard_name?: string
+          id?: string
+          lat?: number
+          lng?: number
+          synced?: boolean
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "patrol_logs_checkpoint_id_fkey"
+            columns: ["checkpoint_id"]
+            isOneToOne: false
+            referencedRelation: "checkpoints"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          id: string
+          last_seen: string | null
+          name: string
+          role: Database["public"]["Enums"]["app_role"]
+          status: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_seen?: string | null
+          name: string
+          role?: Database["public"]["Enums"]["app_role"]
+          status?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_seen?: string | null
+          name?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          status?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          role: Database["public"]["Enums"]["app_role"]
+          user_id: string
+        }
+        Update: {
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      has_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: boolean
+      }
     }
     Enums: {
-      [_ in never]: never
+      app_role: "guard" | "manager"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +385,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["guard", "manager"],
+    },
   },
 } as const
