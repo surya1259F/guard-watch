@@ -1,23 +1,30 @@
 import React, { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { Shield, Lock, User, AlertTriangle } from "lucide-react";
+import { Shield, Lock, User, AlertTriangle, Mail, UserPlus } from "lucide-react";
 
 export default function LoginPage() {
-  const { login } = useAuth();
-  const [username, setUsername] = useState("");
+  const { login, signup } = useAuth();
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [role, setRole] = useState<"guard" | "manager">("guard");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError("");
-    setTimeout(() => {
-      const result = login(username, password);
-      if (!result.success) setError(result.error || "Login failed");
-      setIsLoading(false);
-    }, 600);
+
+    let result;
+    if (isSignUp) {
+      result = await signup(email, password, name || email, role);
+    } else {
+      result = await login(email, password);
+    }
+    if (!result.success) setError(result.error || "Authentication failed");
+    setIsLoading(false);
   };
 
   return (
@@ -32,6 +39,23 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-card border border-border rounded-xl p-6 shadow-lg">
+          <div className="flex mb-4 rounded-lg bg-secondary p-1">
+            <button
+              type="button"
+              onClick={() => { setIsSignUp(false); setError(""); }}
+              className={`flex-1 py-2 text-sm font-medium rounded-md transition ${!isSignUp ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              Sign In
+            </button>
+            <button
+              type="button"
+              onClick={() => { setIsSignUp(true); setError(""); }}
+              className={`flex-1 py-2 text-sm font-medium rounded-md transition ${isSignUp ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
+            >
+              Sign Up
+            </button>
+          </div>
+
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
               <div className="flex items-center gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
@@ -39,20 +63,39 @@ export default function LoginPage() {
                 {error}
               </div>
             )}
+
+            {isSignUp && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Full Name</label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    placeholder="Enter your name"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
             <div>
-              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Username</label>
+              <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Email</label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <input
-                  type="text"
-                  value={username}
-                  onChange={e => setUsername(e.target.value)}
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
                   className="w-full pl-10 pr-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-                  placeholder="Enter username"
+                  placeholder="Enter email"
                   required
                 />
               </div>
             </div>
+
             <div>
               <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Password</label>
               <div className="relative">
@@ -64,33 +107,34 @@ export default function LoginPage() {
                   className="w-full pl-10 pr-4 py-2.5 bg-secondary border border-border rounded-lg text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
                   placeholder="Enter password"
                   required
+                  minLength={6}
                 />
               </div>
             </div>
+
+            {isSignUp && (
+              <div>
+                <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Role</label>
+                <select
+                  value={role}
+                  onChange={e => setRole(e.target.value as "guard" | "manager")}
+                  className="w-full py-2.5 px-3 bg-secondary border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="guard">🛡️ Guard</option>
+                  <option value="manager">📊 Manager</option>
+                </select>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={isLoading}
-              className="w-full py-2.5 bg-primary text-primary-foreground font-semibold rounded-lg hover:opacity-90 transition disabled:opacity-50"
+              className="w-full py-2.5 bg-primary text-primary-foreground font-semibold rounded-lg hover:opacity-90 transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {isLoading ? "Authenticating..." : "Sign In"}
+              {isSignUp ? <UserPlus className="w-4 h-4" /> : null}
+              {isLoading ? "Please wait..." : isSignUp ? "Create Account" : "Sign In"}
             </button>
           </form>
-        </div>
-
-        <div className="mt-6 bg-accent/10 border border-accent/20 rounded-xl p-4">
-          <p className="text-xs font-semibold text-accent mb-2">Demo Credentials</p>
-          <div className="space-y-1 text-xs text-muted-foreground font-mono">
-            <p>Guard: <span className="text-foreground">guard1</span> / <span className="text-foreground">guard123</span></p>
-            <p>Guard: <span className="text-foreground">guard2</span> / <span className="text-foreground">guard123</span></p>
-            <p>Manager: <span className="text-foreground">manager</span> / <span className="text-foreground">manager123</span></p>
-          </div>
-        </div>
-
-        <div className="mt-4 text-center">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-patrol-amber/10 border border-patrol-amber/20 rounded-full">
-            <div className="w-2 h-2 rounded-full bg-patrol-amber animate-pulse" />
-            <span className="text-xs text-patrol-amber font-medium">Demo Mode — No Firebase configured</span>
-          </div>
         </div>
       </div>
     </div>

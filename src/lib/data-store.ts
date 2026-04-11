@@ -1,103 +1,136 @@
-import {
-  type PatrolLog, type GPSTracking, type Incident, type Alert, type Checkpoint,
-  DEMO_PATROL_LOGS, DEMO_GPS, DEMO_INCIDENTS, DEMO_ALERTS, CHECKPOINTS,
-} from "./mock-data";
+import { supabase } from "@/integrations/supabase/client";
 
-const STORAGE_KEYS = {
-  patrolLogs: "sp_patrol_logs",
-  gps: "sp_gps",
-  incidents: "sp_incidents",
-  alerts: "sp_alerts",
-  checkpoints: "sp_checkpoints",
-  pendingScans: "sp_pending_scans",
-};
+// Pending scans stored locally for offline mode
+const PENDING_KEY = "sp_pending_scans";
 
-function load<T>(key: string, fallback: T[]): T[] {
+interface PendingScan {
+  id: string;
+  guard_id: string;
+  guard_name: string;
+  checkpoint_id: string;
+  checkpoint_name: string;
+  timestamp: string;
+  lat: number;
+  lng: number;
+}
+
+function loadPending(): PendingScan[] {
   try {
-    const data = localStorage.getItem(key);
-    return data ? JSON.parse(data) : fallback;
-  } catch { return fallback; }
+    const d = localStorage.getItem(PENDING_KEY);
+    return d ? JSON.parse(d) : [];
+  } catch { return []; }
 }
 
-function save<T>(key: string, data: T[]) {
-  localStorage.setItem(key, JSON.stringify(data));
+function savePending(data: PendingScan[]) {
+  localStorage.setItem(PENDING_KEY, JSON.stringify(data));
 }
-
-// Initialize data on first load
-function init() {
-  if (!localStorage.getItem(STORAGE_KEYS.patrolLogs)) save(STORAGE_KEYS.patrolLogs, DEMO_PATROL_LOGS);
-  if (!localStorage.getItem(STORAGE_KEYS.gps)) save(STORAGE_KEYS.gps, DEMO_GPS);
-  if (!localStorage.getItem(STORAGE_KEYS.incidents)) save(STORAGE_KEYS.incidents, DEMO_INCIDENTS);
-  if (!localStorage.getItem(STORAGE_KEYS.alerts)) save(STORAGE_KEYS.alerts, DEMO_ALERTS);
-  if (!localStorage.getItem(STORAGE_KEYS.checkpoints)) save(STORAGE_KEYS.checkpoints, CHECKPOINTS);
-}
-init();
 
 export const dataStore = {
-  getPatrolLogs: (): PatrolLog[] => load(STORAGE_KEYS.patrolLogs, DEMO_PATROL_LOGS),
-  addPatrolLog: (log: PatrolLog) => {
-    const logs = dataStore.getPatrolLogs();
-    logs.unshift(log);
-    save(STORAGE_KEYS.patrolLogs, logs);
-    // Update checkpoint
-    const cps = dataStore.getCheckpoints();
-    const cp = cps.find(c => c.id === log.checkpointId);
-    if (cp) { cp.lastScanned = log.timestamp; cp.lastScannedBy = log.guardName; }
-    save(STORAGE_KEYS.checkpoints, cps);
+  // Patrol Logs
+  getPatrolLogs: async () => {
+    const { data } = await supabase.from("patrol_logs").select("*").order("timestamp", { ascending: false });
+    return data || [];
   },
 
-  getGPS: (): GPSTracking[] => load(STORAGE_KEYS.gps, DEMO_GPS),
-  updateGPS: (entry: GPSTracking) => {
-    const gps = dataStore.getGPS();
-    const idx = gps.findIndex(g => g.guardId === entry.guardId);
-    if (idx >= 0) gps[idx] = entry; else gps.push(entry);
-    save(STORAGE_KEYS.gps, gps);
+  addPatrolLog: async (log: {
+    id: string; guard_id: string; guard_name: string;
+    checkpoint_id: string; checkpoint_name: string;
+    timestamp: string; lat: number; lng: number; synced: boolean;
+  }) => {
+    await supabase.from("patrol_logs").insert(log);
+    // Update checkpoint last_scanned
+    await supabase.from("checkpoints").update({
+      last_scanned: log.timestamp,
+      last_scanned_by: log.guard_name,
+    }).eq("id", log.checkpoint_id);
   },
 
-  getIncidents: (): Incident[] => load(STORAGE_KEYS.incidents, DEMO_INCIDENTS),
-  addIncident: (inc: Incident) => {
-    const incidents = dataStore.getIncidents();
-    incidents.unshift(inc);
-    save(STORAGE_KEYS.incidents, incidents);
+  // GPS
+  getGPS: async () => {
+    const { data } = await supabase.from("gps_tracking").select("*");
+    return data || [];
+  },
+
+  updateGPS: async (entry: {
+    guard_id: string; guard_name: string; lat: number; lng: number;
+    timestamp: string; is_moving: boolean; status: string;
+  }) => {
+    const { data: existing } = await supabase.from("gps_tracking")
+      .select("id").eq("guard_id", entry.guard_id).maybeSingle();
+    if (existing) {
+      await supabase.from("gps_tracking").update(entry).eq("guard_id", entry.guard_id);
+    } else {
+      await supabase.from("gps_tracking").insert(entry);
+    }
+  },
+
+  // Incidents
+  getIncidents: async () => {
+    const { data } = await supabase.from("incidents").select("*").order("timestamp", { ascending: false });
+    return data || [];
+  },
+
+  addIncident: async (inc: {
+    id: string; guard_id: string; guard_name: string; type: string;
+    description: string; lat: number; lng: number; timestamp: string; resolved: boolean;
+  }) => {
+    await supabase.from("incidents").insert(inc);
     // Auto-generate alert
-    const alert: Alert = {
+    await supabase.from("alerts").insert({
       id: "a" + Date.now(),
-      message: `INCIDENT: ${inc.type} reported by ${inc.guardName} at (${inc.lat.toFixed(4)}, ${inc.lng.toFixed(4)})`,
+      message: `INCIDENT: ${inc.type} reported by ${inc.guard_name} at (${inc.lat.toFixed(4)}, ${inc.lng.toFixed(4)})`,
       severity: "HIGH",
       timestamp: new Date().toISOString(),
       dismissed: false,
       type: "incident",
-    };
-    dataStore.addAlert(alert);
+    });
   },
 
-  getAlerts: (): Alert[] => load(STORAGE_KEYS.alerts, DEMO_ALERTS),
-  addAlert: (alert: Alert) => {
-    const alerts = dataStore.getAlerts();
-    alerts.unshift(alert);
-    save(STORAGE_KEYS.alerts, alerts);
-  },
-  dismissAlert: (id: string) => {
-    const alerts = dataStore.getAlerts();
-    const a = alerts.find(a => a.id === id);
-    if (a) a.dismissed = true;
-    save(STORAGE_KEYS.alerts, alerts);
+  // Alerts
+  getAlerts: async () => {
+    const { data } = await supabase.from("alerts").select("*").order("timestamp", { ascending: false });
+    return data || [];
   },
 
-  getCheckpoints: (): Checkpoint[] => load(STORAGE_KEYS.checkpoints, CHECKPOINTS),
+  addAlert: async (alert: { id: string; message: string; severity: string; timestamp: string; dismissed: boolean; type: string }) => {
+    await supabase.from("alerts").insert(alert);
+  },
 
-  // Pending scans (offline queue)
-  getPendingScans: (): PatrolLog[] => load(STORAGE_KEYS.pendingScans, []),
-  addPendingScan: (log: PatrolLog) => {
-    const pending = dataStore.getPendingScans();
+  dismissAlert: async (id: string) => {
+    await supabase.from("alerts").update({ dismissed: true }).eq("id", id);
+  },
+
+  // Checkpoints
+  getCheckpoints: async () => {
+    const { data } = await supabase.from("checkpoints").select("*");
+    return data || [];
+  },
+
+  // Pending scans (offline queue - stays in localStorage)
+  getPendingScans: (): PendingScan[] => loadPending(),
+
+  addPendingScan: (log: PendingScan) => {
+    const pending = loadPending();
     pending.push(log);
-    save(STORAGE_KEYS.pendingScans, pending);
+    savePending(pending);
   },
-  syncPendingScans: () => {
-    const pending = dataStore.getPendingScans();
-    pending.forEach(log => { log.synced = true; dataStore.addPatrolLog(log); });
-    save(STORAGE_KEYS.pendingScans, []);
+
+  syncPendingScans: async () => {
+    const pending = loadPending();
+    for (const log of pending) {
+      await dataStore.addPatrolLog({ ...log, synced: true });
+    }
+    savePending([]);
     return pending.length;
   },
-  clearPendingScans: () => save(STORAGE_KEYS.pendingScans, []),
+
+  clearPendingScans: () => savePending([]),
+
+  // Real-time subscriptions
+  subscribeToTable: (table: string, callback: () => void) => {
+    const channel = supabase.channel(`${table}_changes`)
+      .on('postgres_changes', { event: '*', schema: 'public', table }, callback)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  },
 };

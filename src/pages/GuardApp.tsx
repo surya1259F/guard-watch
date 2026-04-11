@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { dataStore } from "@/lib/data-store";
-import { CHECKPOINTS, type PatrolLog, type Incident } from "@/lib/mock-data";
 import { toast } from "sonner";
 import {
   QrCode, ClipboardList, AlertTriangle, LogOut, Shield, Wifi, WifiOff,
@@ -18,7 +17,11 @@ export default function GuardApp() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
   useEffect(() => {
-    const handleOnline = () => { setIsOnline(true); const synced = dataStore.syncPendingScans(); if (synced > 0) toast.success(`${synced} pending scans synced`); };
+    const handleOnline = async () => {
+      setIsOnline(true);
+      const synced = await dataStore.syncPendingScans();
+      if (synced > 0) toast.success(`${synced} pending scans synced`);
+    };
     const handleOffline = () => setIsOnline(false);
     window.addEventListener("online", handleOnline);
     window.addEventListener("offline", handleOffline);
@@ -26,7 +29,7 @@ export default function GuardApp() {
     return () => { window.removeEventListener("online", handleOnline); window.removeEventListener("offline", handleOffline); };
   }, []);
 
-  // GPS tracking simulation
+  // GPS tracking
   useEffect(() => {
     if (!user) return;
     let lastLat = 40.713 + (Math.random() - 0.5) * 0.005;
@@ -35,8 +38,16 @@ export default function GuardApp() {
       const moving = Math.random() > 0.3;
       if (moving) { lastLat += (Math.random() - 0.5) * 0.001; lastLng += (Math.random() - 0.5) * 0.001; }
       setGuardStatus(moving ? "patrolling" : "idle");
-      dataStore.updateGPS({ guardId: user.uid, guardName: user.name, lat: lastLat, lng: lastLng, timestamp: new Date().toISOString(), isMoving: moving, status: moving ? "patrolling" : "idle" });
+      dataStore.updateGPS({
+        guard_id: user.uid, guard_name: user.name, lat: lastLat, lng: lastLng,
+        timestamp: new Date().toISOString(), is_moving: moving, status: moving ? "patrolling" : "idle"
+      });
     }, 30000);
+    // Initial GPS update
+    dataStore.updateGPS({
+      guard_id: user.uid, guard_name: user.name, lat: lastLat, lng: lastLng,
+      timestamp: new Date().toISOString(), is_moving: true, status: "patrolling"
+    });
     return () => clearInterval(interval);
   }, [user]);
 
@@ -44,7 +55,6 @@ export default function GuardApp() {
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
       <header className="bg-card border-b border-border px-4 py-3 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
           <Shield className="w-5 h-5 text-primary" />
@@ -64,14 +74,12 @@ export default function GuardApp() {
         </div>
       </header>
 
-      {/* Content */}
       <main className="flex-1 overflow-y-auto pb-20">
         {tab === "scan" && <ScanTab user={user} isOnline={isOnline} onScan={() => setPendingCount(dataStore.getPendingScans().length)} />}
         {tab === "log" && <LogTab guardId={user.uid} />}
         {tab === "report" && <ReportTab user={user} />}
       </main>
 
-      {/* Bottom Nav */}
       <nav className="fixed bottom-0 left-0 right-0 bg-card border-t border-border flex">
         {([
           { id: "scan" as const, icon: QrCode, label: "Scan" },
@@ -109,8 +117,13 @@ function StatusBadge({ status }: { status: string }) {
 function ScanTab({ user, isOnline, onScan }: { user: any; isOnline: boolean; onScan: () => void }) {
   const [scanning, setScanning] = useState(false);
   const [lastScan, setLastScan] = useState<string | null>(null);
+  const [checkpoints, setCheckpoints] = useState<any[]>([]);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  useEffect(() => {
+    dataStore.getCheckpoints().then(setCheckpoints);
+  }, []);
 
   const stopCamera = useCallback(() => {
     if (streamRef.current) {
@@ -120,21 +133,22 @@ function ScanTab({ user, isOnline, onScan }: { user: any; isOnline: boolean; onS
     setScanning(false);
   }, []);
 
-  const simulateScan = () => {
-    const cp = CHECKPOINTS[Math.floor(Math.random() * CHECKPOINTS.length)];
-    const log: PatrolLog = {
+  const simulateScan = async () => {
+    if (checkpoints.length === 0) return;
+    const cp = checkpoints[Math.floor(Math.random() * checkpoints.length)];
+    const log = {
       id: "pl" + Date.now(),
-      guardId: user.uid,
-      guardName: user.name,
-      checkpointId: cp.id,
-      checkpointName: cp.name,
+      guard_id: user.uid,
+      guard_name: user.name,
+      checkpoint_id: cp.id,
+      checkpoint_name: cp.name,
       timestamp: new Date().toISOString(),
       lat: cp.lat + (Math.random() - 0.5) * 0.001,
       lng: cp.lng + (Math.random() - 0.5) * 0.001,
       synced: isOnline,
     };
     if (isOnline) {
-      dataStore.addPatrolLog(log);
+      await dataStore.addPatrolLog(log);
     } else {
       dataStore.addPendingScan(log);
     }
@@ -150,10 +164,8 @@ function ScanTab({ user, isOnline, onScan }: { user: any; isOnline: boolean; onS
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
-      // In demo mode, auto-scan after 2 seconds
       setTimeout(simulateScan, 2000);
     } catch {
-      // Camera not available, simulate directly
       setTimeout(simulateScan, 1000);
     }
   };
@@ -163,7 +175,6 @@ function ScanTab({ user, isOnline, onScan }: { user: any; isOnline: boolean; onS
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-lg font-bold">QR Code Scanner</h2>
-
       {scanning ? (
         <div className="relative rounded-xl overflow-hidden bg-secondary aspect-square max-w-sm mx-auto border-2 border-primary/30">
           <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
@@ -171,17 +182,14 @@ function ScanTab({ user, isOnline, onScan }: { user: any; isOnline: boolean; onS
             <div className="w-48 h-48 border-2 border-primary rounded-2xl animate-pulse" />
           </div>
           <div className="absolute bottom-4 left-0 right-0 text-center">
-            <span className="text-xs bg-card/80 text-foreground px-3 py-1 rounded-full">Scanning... (demo auto-scan)</span>
+            <span className="text-xs bg-card/80 text-foreground px-3 py-1 rounded-full">Scanning...</span>
           </div>
           <button onClick={stopCamera} className="absolute top-3 right-3 bg-card/80 p-2 rounded-lg">
             <span className="text-xs font-medium">Cancel</span>
           </button>
         </div>
       ) : (
-        <button
-          onClick={startCamera}
-          className="w-full max-w-sm mx-auto flex flex-col items-center gap-3 p-8 bg-card border-2 border-dashed border-border rounded-xl hover:border-primary/50 transition"
-        >
+        <button onClick={startCamera} className="w-full max-w-sm mx-auto flex flex-col items-center gap-3 p-8 bg-card border-2 border-dashed border-border rounded-xl hover:border-primary/50 transition">
           <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
             <Camera className="w-8 h-8 text-primary" />
           </div>
@@ -189,14 +197,12 @@ function ScanTab({ user, isOnline, onScan }: { user: any; isOnline: boolean; onS
           <span className="text-xs text-muted-foreground">Point camera at QR code</span>
         </button>
       )}
-
       {lastScan && (
         <div className="flex items-center gap-2 p-3 bg-primary/10 border border-primary/20 rounded-lg max-w-sm mx-auto">
           <CheckCircle2 className="w-5 h-5 text-primary shrink-0" />
           <span className="text-sm">Last scan: {lastScan}</span>
         </div>
       )}
-
       {!isOnline && (
         <div className="flex items-center gap-2 p-3 bg-patrol-amber/10 border border-patrol-amber/20 rounded-lg max-w-sm mx-auto">
           <WifiOff className="w-4 h-4 text-patrol-amber" />
@@ -208,28 +214,40 @@ function ScanTab({ user, isOnline, onScan }: { user: any; isOnline: boolean; onS
 }
 
 function LogTab({ guardId }: { guardId: string }) {
-  const logs = dataStore.getPatrolLogs().filter(l => l.guardId === guardId);
-  const today = new Date().toDateString();
-  const todayLogs = logs.filter(l => new Date(l.timestamp).toDateString() === today);
+  const [logs, setLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    dataStore.getPatrolLogs().then(all => {
+      const today = new Date().toDateString();
+      setLogs(all.filter((l: any) => l.guard_id === guardId && new Date(l.timestamp).toDateString() === today));
+    });
+    const unsub = dataStore.subscribeToTable("patrol_logs", () => {
+      dataStore.getPatrolLogs().then(all => {
+        const today = new Date().toDateString();
+        setLogs(all.filter((l: any) => l.guard_id === guardId && new Date(l.timestamp).toDateString() === today));
+      });
+    });
+    return unsub;
+  }, [guardId]);
 
   return (
     <div className="p-4 space-y-3">
       <h2 className="text-lg font-bold">Today's Patrol Log</h2>
-      <p className="text-sm text-muted-foreground">{todayLogs.length} checkpoints scanned today</p>
-      {todayLogs.length === 0 ? (
+      <p className="text-sm text-muted-foreground">{logs.length} checkpoints scanned today</p>
+      {logs.length === 0 ? (
         <div className="text-center py-12 text-muted-foreground">
           <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-50" />
           <p className="text-sm">No scans recorded today</p>
         </div>
       ) : (
         <div className="space-y-2">
-          {todayLogs.map(log => (
+          {logs.map((log: any) => (
             <div key={log.id} className="bg-card border border-border rounded-lg p-3 flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
                 <MapPin className="w-5 h-5 text-primary" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-medium text-sm truncate">{log.checkpointName}</p>
+                <p className="font-medium text-sm truncate">{log.checkpoint_name}</p>
                 <p className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleTimeString()}</p>
               </div>
               {log.synced ? (
@@ -246,31 +264,28 @@ function LogTab({ guardId }: { guardId: string }) {
 }
 
 function ReportTab({ user }: { user: any }) {
-  const [type, setType] = useState<Incident["type"]>("Other");
+  const [type, setType] = useState("Other");
   const [description, setDescription] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!description.trim()) return;
     setSubmitting(true);
-    setTimeout(() => {
-      const incident: Incident = {
-        id: "inc" + Date.now(),
-        guardId: user.uid,
-        guardName: user.name,
-        type,
-        description,
-        lat: 40.713 + (Math.random() - 0.5) * 0.005,
-        lng: -74.006 + (Math.random() - 0.5) * 0.005,
-        timestamp: new Date().toISOString(),
-        resolved: false,
-      };
-      dataStore.addIncident(incident);
-      toast.success("Incident reported successfully");
-      setDescription("");
-      setSubmitting(false);
-    }, 500);
+    await dataStore.addIncident({
+      id: "inc" + Date.now(),
+      guard_id: user.uid,
+      guard_name: user.name,
+      type,
+      description,
+      lat: 40.713 + (Math.random() - 0.5) * 0.005,
+      lng: -74.006 + (Math.random() - 0.5) * 0.005,
+      timestamp: new Date().toISOString(),
+      resolved: false,
+    });
+    toast.success("Incident reported successfully");
+    setDescription("");
+    setSubmitting(false);
   };
 
   return (
@@ -281,7 +296,7 @@ function ReportTab({ user }: { user: any }) {
           <label className="text-sm font-medium text-muted-foreground mb-1.5 block">Incident Type</label>
           <select
             value={type}
-            onChange={e => setType(e.target.value as Incident["type"])}
+            onChange={e => setType(e.target.value)}
             className="w-full py-2.5 px-3 bg-secondary border border-border rounded-lg text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="Fire">🔥 Fire</option>

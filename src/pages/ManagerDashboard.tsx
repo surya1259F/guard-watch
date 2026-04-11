@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { dataStore } from "@/lib/data-store";
-import { CHECKPOINTS, type Alert as AlertType } from "@/lib/mock-data";
 import { toast } from "sonner";
 import {
   Shield, LogOut, Map, ClipboardList, Bell, BarChart3, QrCode,
   Download, Printer, AlertTriangle, CheckCircle2, XCircle, Clock,
-  Users, Scan, MapPin, FileText, X, Filter, ChevronDown
+  Users, Scan, MapPin, FileText, X
 } from "lucide-react";
 import QRCode from "qrcode";
 
@@ -15,14 +14,22 @@ type ManagerTab = "map" | "logs" | "alerts" | "reports" | "qr";
 export default function ManagerDashboard() {
   const { user, logout } = useAuth();
   const [tab, setTab] = useState<ManagerTab>("map");
-  const alerts = dataStore.getAlerts().filter(a => !a.dismissed);
+  const [alertCount, setAlertCount] = useState(0);
+
+  useEffect(() => {
+    dataStore.getAlerts().then(a => setAlertCount(a.filter((x: any) => !x.dismissed).length));
+    const unsub = dataStore.subscribeToTable("alerts", () => {
+      dataStore.getAlerts().then(a => setAlertCount(a.filter((x: any) => !x.dismissed).length));
+    });
+    return unsub;
+  }, []);
 
   if (!user) return null;
 
   const tabs = [
     { id: "map" as const, icon: Map, label: "Map" },
     { id: "logs" as const, icon: ClipboardList, label: "Logs" },
-    { id: "alerts" as const, icon: Bell, label: "Alerts", badge: alerts.length },
+    { id: "alerts" as const, icon: Bell, label: "Alerts", badge: alertCount },
     { id: "reports" as const, icon: BarChart3, label: "Reports" },
     { id: "qr" as const, icon: QrCode, label: "QR Codes" },
   ];
@@ -43,7 +50,6 @@ export default function ManagerDashboard() {
         </div>
       </header>
 
-      {/* Tab Nav */}
       <nav className="bg-card border-b border-border px-2 flex overflow-x-auto shrink-0">
         {tabs.map(t => (
           <button
@@ -76,26 +82,28 @@ export default function ManagerDashboard() {
 }
 
 function LiveMapTab() {
-  const gpsData = dataStore.getGPS();
-  // Dynamic import for leaflet to avoid SSR issues
+  const [gpsData, setGpsData] = useState<any[]>([]);
   const [MapComponent, setMapComponent] = useState<React.ComponentType | null>(null);
 
   useEffect(() => {
+    dataStore.getGPS().then(setGpsData);
     import("@/components/PatrolMap").then(mod => setMapComponent(() => mod.default));
+    const unsub = dataStore.subscribeToTable("gps_tracking", () => dataStore.getGPS().then(setGpsData));
+    return unsub;
   }, []);
 
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-lg font-bold">Live Guard Positions</h2>
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
-        {gpsData.map(g => (
-          <div key={g.guardId} className="bg-card border border-border rounded-lg p-3 flex items-center gap-3">
+        {gpsData.map((g: any) => (
+          <div key={g.guard_id} className="bg-card border border-border rounded-lg p-3 flex items-center gap-3">
             <div className={`w-3 h-3 rounded-full ${
               g.status === "patrolling" ? "bg-patrol-green animate-pulse-green" :
               g.status === "idle" ? "bg-patrol-amber" : "bg-patrol-gray"
             }`} />
             <div>
-              <p className="text-sm font-medium">{g.guardName}</p>
+              <p className="text-sm font-medium">{g.guard_name}</p>
               <p className="text-xs text-muted-foreground capitalize">{g.status} · {new Date(g.timestamp).toLocaleTimeString()}</p>
             </div>
           </div>
@@ -115,11 +123,17 @@ function LiveMapTab() {
 function PatrolLogsTab() {
   const [guardFilter, setGuardFilter] = useState("");
   const [dateFilter, setDateFilter] = useState("");
-  const logs = dataStore.getPatrolLogs();
+  const [logs, setLogs] = useState<any[]>([]);
+
+  useEffect(() => {
+    dataStore.getPatrolLogs().then(setLogs);
+    const unsub = dataStore.subscribeToTable("patrol_logs", () => dataStore.getPatrolLogs().then(setLogs));
+    return unsub;
+  }, []);
 
   const filtered = useMemo(() => {
-    return logs.filter(l => {
-      if (guardFilter && !l.guardName.toLowerCase().includes(guardFilter.toLowerCase())) return false;
+    return logs.filter((l: any) => {
+      if (guardFilter && !l.guard_name.toLowerCase().includes(guardFilter.toLowerCase())) return false;
       if (dateFilter && !l.timestamp.startsWith(dateFilter)) return false;
       return true;
     });
@@ -127,7 +141,7 @@ function PatrolLogsTab() {
 
   const exportCSV = () => {
     const header = "Guard Name,Checkpoint,Time,Latitude,Longitude,Synced\n";
-    const rows = filtered.map(l => `${l.guardName},${l.checkpointName},${new Date(l.timestamp).toLocaleString()},${l.lat},${l.lng},${l.synced}`).join("\n");
+    const rows = filtered.map((l: any) => `${l.guard_name},${l.checkpoint_name},${new Date(l.timestamp).toLocaleString()},${l.lat},${l.lng},${l.synced}`).join("\n");
     const blob = new Blob([header + rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -145,18 +159,10 @@ function PatrolLogsTab() {
         </button>
       </div>
       <div className="flex gap-2 flex-wrap">
-        <input
-          value={guardFilter}
-          onChange={e => setGuardFilter(e.target.value)}
-          placeholder="Filter by guard..."
-          className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-        />
-        <input
-          type="date"
-          value={dateFilter}
-          onChange={e => setDateFilter(e.target.value)}
-          className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
-        />
+        <input value={guardFilter} onChange={e => setGuardFilter(e.target.value)} placeholder="Filter by guard..."
+          className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
+        <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+          className="px-3 py-1.5 bg-secondary border border-border rounded-lg text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50" />
       </div>
       <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-sm">
@@ -170,10 +176,10 @@ function PatrolLogsTab() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {filtered.map(l => (
+            {filtered.map((l: any) => (
               <tr key={l.id} className="hover:bg-secondary/50">
-                <td className="px-3 py-2 font-medium">{l.guardName}</td>
-                <td className="px-3 py-2">{l.checkpointName}</td>
+                <td className="px-3 py-2 font-medium">{l.guard_name}</td>
+                <td className="px-3 py-2">{l.checkpoint_name}</td>
                 <td className="px-3 py-2 text-muted-foreground">{new Date(l.timestamp).toLocaleString()}</td>
                 <td className="px-3 py-2 text-muted-foreground font-mono text-xs hidden sm:table-cell">{l.lat.toFixed(4)}, {l.lng.toFixed(4)}</td>
                 <td className="px-3 py-2">
@@ -189,15 +195,23 @@ function PatrolLogsTab() {
 }
 
 function AlertsTab() {
-  const [alerts, setAlerts] = useState(dataStore.getAlerts());
-  const undismissed = alerts.filter(a => !a.dismissed);
+  const [alerts, setAlerts] = useState<any[]>([]);
 
-  const dismiss = (id: string) => {
-    dataStore.dismissAlert(id);
-    setAlerts(dataStore.getAlerts());
+  useEffect(() => {
+    dataStore.getAlerts().then(setAlerts);
+    const unsub = dataStore.subscribeToTable("alerts", () => dataStore.getAlerts().then(setAlerts));
+    return unsub;
+  }, []);
+
+  const undismissed = alerts.filter((a: any) => !a.dismissed);
+
+  const dismiss = async (id: string) => {
+    await dataStore.dismissAlert(id);
+    const updated = await dataStore.getAlerts();
+    setAlerts(updated);
   };
 
-  const severityStyles = {
+  const severityStyles: Record<string, string> = {
     HIGH: "bg-patrol-red/10 border-patrol-red/30 text-patrol-red",
     MEDIUM: "bg-patrol-amber/10 border-patrol-amber/30 text-patrol-amber",
     LOW: "bg-muted border-border text-muted-foreground",
@@ -214,8 +228,8 @@ function AlertsTab() {
         </div>
       ) : (
         <div className="space-y-2">
-          {undismissed.map(a => (
-            <div key={a.id} className={`flex items-start gap-3 p-3 rounded-lg border ${severityStyles[a.severity]}`}>
+          {undismissed.map((a: any) => (
+            <div key={a.id} className={`flex items-start gap-3 p-3 rounded-lg border ${severityStyles[a.severity] || severityStyles.LOW}`}>
               <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -234,30 +248,40 @@ function AlertsTab() {
 }
 
 function ReportsTab() {
-  const logs = dataStore.getPatrolLogs();
-  const gps = dataStore.getGPS();
-  const incidents = dataStore.getIncidents();
-  const checkpoints = dataStore.getCheckpoints();
+  const [logs, setLogs] = useState<any[]>([]);
+  const [gps, setGps] = useState<any[]>([]);
+  const [incidents, setIncidents] = useState<any[]>([]);
+  const [checkpoints, setCheckpoints] = useState<any[]>([]);
+
+  useEffect(() => {
+    Promise.all([
+      dataStore.getPatrolLogs(),
+      dataStore.getGPS(),
+      dataStore.getIncidents(),
+      dataStore.getCheckpoints(),
+    ]).then(([l, g, i, c]) => { setLogs(l); setGps(g); setIncidents(i); setCheckpoints(c); });
+  }, []);
+
   const today = new Date().toDateString();
-  const todayLogs = logs.filter(l => new Date(l.timestamp).toDateString() === today);
-  const activeGuards = gps.filter(g => g.status !== "offline").length;
-  const coveredCheckpoints = new Set(todayLogs.map(l => l.checkpointId)).size;
-  const missedCheckpoints = checkpoints.filter(cp => {
-    if (!cp.lastScanned) return true;
-    return Date.now() - new Date(cp.lastScanned).getTime() > 4 * 3600000;
+  const todayLogs = logs.filter((l: any) => new Date(l.timestamp).toDateString() === today);
+  const activeGuards = gps.filter((g: any) => g.status !== "offline").length;
+  const coveredCheckpoints = new Set(todayLogs.map((l: any) => l.checkpoint_id)).size;
+  const missedCheckpoints = checkpoints.filter((cp: any) => {
+    if (!cp.last_scanned) return true;
+    return Date.now() - new Date(cp.last_scanned).getTime() > 4 * 3600000;
   });
 
   const guardBreakdown = useMemo(() => {
-    const guards = [...new Set(logs.map(l => l.guardId))];
+    const guards = [...new Set(logs.map((l: any) => l.guard_id))];
     return guards.map(gId => {
-      const guardLogs = logs.filter(l => l.guardId === gId);
-      const guardTodayLogs = todayLogs.filter(l => l.guardId === gId);
-      const gpsEntry = gps.find(g => g.guardId === gId);
+      const guardLogs = logs.filter((l: any) => l.guard_id === gId);
+      const guardTodayLogs = todayLogs.filter((l: any) => l.guard_id === gId);
+      const gpsEntry = gps.find((g: any) => g.guard_id === gId);
       return {
-        name: guardLogs[0]?.guardName || gId,
+        name: guardLogs[0]?.guard_name || gId,
         scansToday: guardTodayLogs.length,
         lastActive: gpsEntry?.timestamp || guardLogs[0]?.timestamp || "N/A",
-        checkpointsHit: new Set(guardTodayLogs.map(l => l.checkpointId)).size,
+        checkpointsHit: new Set(guardTodayLogs.map((l: any) => l.checkpoint_id)).size,
         status: gpsEntry?.status || "offline",
       };
     });
@@ -288,7 +312,7 @@ function ReportsTab() {
         doc.setFontSize(14);
         doc.text("Missed Checkpoints (4h+)", 14, y);
         y += 8;
-        missedCheckpoints.forEach(cp => {
+        missedCheckpoints.forEach((cp: any) => {
           doc.setFontSize(10);
           doc.text(`${cp.name} — ${cp.location}`, 14, y);
           y += 8;
@@ -303,7 +327,7 @@ function ReportsTab() {
     { label: "Scans Today", value: todayLogs.length, icon: Scan, color: "text-primary" },
     { label: "Guards Active", value: activeGuards, icon: Users, color: "text-patrol-green" },
     { label: "Checkpoints Hit", value: `${coveredCheckpoints}/${checkpoints.length}`, icon: MapPin, color: "text-patrol-blue" },
-    { label: "Incidents", value: incidents.filter(i => !i.resolved).length, icon: AlertTriangle, color: "text-patrol-red" },
+    { label: "Incidents", value: incidents.filter((i: any) => !i.resolved).length, icon: AlertTriangle, color: "text-patrol-red" },
   ];
 
   return (
@@ -360,12 +384,12 @@ function ReportsTab() {
         <>
           <h3 className="font-semibold text-patrol-red">Missed Checkpoints (4h+)</h3>
           <div className="space-y-2">
-            {missedCheckpoints.map(cp => (
+            {missedCheckpoints.map((cp: any) => (
               <div key={cp.id} className="bg-patrol-red/5 border border-patrol-red/20 rounded-lg p-3 flex items-center gap-3">
                 <XCircle className="w-5 h-5 text-patrol-red shrink-0" />
                 <div>
                   <p className="text-sm font-medium">{cp.name}</p>
-                  <p className="text-xs text-muted-foreground">{cp.location} · Last: {cp.lastScanned ? new Date(cp.lastScanned).toLocaleString() : "Never"}</p>
+                  <p className="text-xs text-muted-foreground">{cp.location} · Last: {cp.last_scanned ? new Date(cp.last_scanned).toLocaleString() : "Never"}</p>
                 </div>
               </div>
             ))}
@@ -378,12 +402,16 @@ function ReportsTab() {
 
 function QRCodesTab() {
   const [qrImages, setQrImages] = useState<Record<string, string>>({});
+  const [checkpoints, setCheckpoints] = useState<any[]>([]);
 
   useEffect(() => {
-    CHECKPOINTS.forEach(cp => {
-      const data = JSON.stringify({ id: cp.id, name: cp.name, location: cp.location });
-      QRCode.toDataURL(data, { width: 200, margin: 2, color: { dark: "#0f172a", light: "#ffffff" } })
-        .then(url => setQrImages(prev => ({ ...prev, [cp.id]: url })));
+    dataStore.getCheckpoints().then(cps => {
+      setCheckpoints(cps);
+      cps.forEach((cp: any) => {
+        const data = JSON.stringify({ id: cp.id, name: cp.name, location: cp.location });
+        QRCode.toDataURL(data, { width: 200, margin: 2, color: { dark: "#0f172a", light: "#ffffff" } })
+          .then(url => setQrImages(prev => ({ ...prev, [cp.id]: url })));
+      });
     });
   }, []);
 
@@ -398,7 +426,7 @@ function QRCodesTab() {
         </button>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {CHECKPOINTS.map(cp => (
+        {checkpoints.map((cp: any) => (
           <div key={cp.id} className="bg-card border border-border rounded-xl p-4 flex flex-col items-center text-center">
             {qrImages[cp.id] ? (
               <img src={qrImages[cp.id]} alt={cp.name} className="w-40 h-40 rounded-lg mb-3" />
