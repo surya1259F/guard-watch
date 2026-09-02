@@ -1,0 +1,11 @@
+REVOKE ALL ON public.teams FROM anon;
+REVOKE ALL ON public.team_members FROM anon;
+REVOKE ALL ON public.team_invites FROM anon;
+REVOKE EXECUTE ON FUNCTION public.validate_team_invite_expiry() FROM PUBLIC;
+REVOKE EXECUTE ON FUNCTION public.update_updated_at_column() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.validate_team_invite_expiry() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.update_updated_at_column() TO authenticated;
+DROP POLICY IF EXISTS "Authenticated users can find teams by manager code" ON public.teams;
+CREATE POLICY "Authenticated users can find teams by manager code" ON public.teams FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "Authenticated users can read invite tokens" ON public.team_invites;
+CREATE POLICY "Invitees can read active invite tokens" ON public.team_invites FOR SELECT TO authenticated USING (accepted_at IS NULL AND expires_at > now());

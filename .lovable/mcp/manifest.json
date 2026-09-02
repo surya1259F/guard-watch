@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "sdk_version": "1.0.0",
+  "path": "/functions/v1/mcp",
+  "auth": {
+    "type": "oauth",
+    "issuer": "https://qngdpmztkxsbvczkldyt.supabase.co/auth/v1",
+    "accepted_audiences": [
+      "authenticated"
+    ]
+  },
+  "mcp": {
+    "server": {
+      "name": "securepatrol",
+      "version": "1.0.0",
+      "title": "SecurePatrol"
+    },
+    "tools": [
+      {
+        "name": "patrol_overview",
+        "title": "Patrol overview",
+        "description": "Read the latest guard locations, statuses, incidents, and checkpoint activity visible to the signed-in user.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      },
+      {
+        "name": "active_alerts",
+        "title": "Active alerts",
+        "description": "List unresolved SecurePatrol alerts for the signed-in user.",
+        "annotations": {
+          "readOnlyHint": true,
+          "idempotentHint": true,
+          "openWorldHint": false
+        },
+        "inputSchema": {
+          "$schema": "http://json-schema.org/draft-07/schema#",
+          "type": "object",
+          "properties": {}
+        },
+        "outputSchema": null
+      }
+    ]
+  }
+}
