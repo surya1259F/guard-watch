@@ -1,0 +1,1 @@
+- [ ] Continue SecurePatrol implementation: audit current auth/dashboard state and finish requested team, phone/email auth, recovery, and monitoring flows.
